@@ -10,43 +10,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repository code
+      # 1. Checkout code
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 2. TruffleHog – Secret Scanning
+      # 2. TruffleHog – Secret Scanning (FIXED)
       - name: TruffleHog Secret Scan
-        uses: trufflesecurity/trufflehog@v3
+        uses: trufflesecurity/trufflehog@main
         continue-on-error: true
         with:
           path: .
 
-      # 3. Snyk – Dependency / SCA Scan
+      # 3. Snyk – SCA
       - name: Snyk Dependency Scan
         uses: snyk/actions/node@master
         continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-      # 4. Semgrep – SAST Scan
+      # 4. Semgrep – SAST
       - name: Semgrep Code Scan
         uses: returntocorp/semgrep-action@v1
         continue-on-error: true
         with:
           publishToken: ${{ secrets.SEMGREP_APP_TOKEN }}
 
-      # 5. Checkov – IaC Scan (Terraform)
+      # 5. Checkov – IaC
       - name: Checkov IaC Scan
         uses: bridgecrewio/checkov-action@master
         continue-on-error: true
         with:
           directory: .
 
-      # 6. Build Docker Image (required for Trivy)
+      # 6. Build Docker image
       - name: Build Docker Image
         run: docker build -t demo-app .
 
-      # 7. Trivy – Container Image Scan
+      # 7. Trivy – Container Scan
       - name: Trivy Container Scan
         uses: aquasecurity/trivy-action@master
         continue-on-error: true
