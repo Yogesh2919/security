@@ -10,18 +10,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Checkout repository code
+    
     - name: Checkout code
       uses: actions/checkout@v3
 
-    # 2. TruffleHog - Secret Scanning
+    
     - name: TruffleHog Secret Scan
       continue-on-error: true
       run: |
         docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:latest \
         filesystem /repo --json > trufflehog-report.json
 
-    # 3. Snyk - Dependency Scan (SCA)
+    
     - name: Snyk Dependency Scan
       continue-on-error: true
       env:
@@ -30,7 +30,7 @@ jobs:
         npm install || true
         npx snyk test --json > snyk-report.json || true
 
-    # 4. Semgrep - SAST
+    
     - name: Semgrep Code Scan
       continue-on-error: true
       env:
@@ -39,18 +39,18 @@ jobs:
         pip install semgrep
         semgrep scan --config=auto --json > semgrep-report.json || true
 
-    # 5. Checkov - IaC Scan
+    
     - name: Checkov IaC Scan
       continue-on-error: true
       run: |
         pip install checkov
         checkov -d . -o json > checkov-report.json || true
 
-    # 6. Build Docker Image
+    
     - name: Build Docker Image
       run: docker build -t demo-app .
 
-    # 7. Trivy - Container Scan
+    
     - name: Trivy Container Scan
       continue-on-error: true
       run: |
@@ -58,7 +58,7 @@ jobs:
         -v /var/run/docker.sock:/var/run/docker.sock \
         aquasec/trivy image demo-app > trivy-report.txt
 
-    # 8. Upload Artifacts
+    
     - name: Upload Security Reports
       uses: actions/upload-artifact@v4
       with:
