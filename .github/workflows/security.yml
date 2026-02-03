@@ -1,4 +1,4 @@
-name: Security CI Pipeline
+name: DevSecOps Security Pipeline (Staged)
 
 on:
   push:
@@ -6,66 +6,149 @@ on:
   pull_request:
 
 jobs:
-  security-scan:
+
+  # =========================
+  # STAGE 1: SECRET SCANNING
+  # =========================
+  secret-scan:
+    name: Secret Scan (TruffleHog)
     runs-on: ubuntu-latest
 
     steps:
-    
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    
-    - name: TruffleHog Secret Scan
-      continue-on-error: true
-      run: |
-        docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:latest \
-        filesystem /repo --json > trufflehog-report.json
+      - name: Run TruffleHog
+        continue-on-error: true
+        run: |
+          docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:latest \
+          filesystem /repo --json > trufflehog-report.json
 
-    
-    - name: Snyk Dependency Scan
-      continue-on-error: true
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      run: |
-        npm install || true
-        npx snyk test --json > snyk-report.json || true
+      - name: Upload Secret Scan Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: secret-report
+          path: trufflehog-report.json
 
-    
-    - name: Semgrep Code Scan
-      continue-on-error: true
-      env:
-        SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-      run: |
-        pip install semgrep
-        semgrep scan --config=auto --json > semgrep-report.json || true
 
-    
-    - name: Checkov IaC Scan
-      continue-on-error: true
-      run: |
-        pip install checkov
-        checkov -d . -o json > checkov-report.json || true
+  # =========================
+  # STAGE 2: SCA
+  # =========================
+  sca-scan:
+    name: Dependency Scan (Snyk)
+    runs-on: ubuntu-latest
+    needs: secret-scan
 
-    
-    - name: Build Docker Image
-      run: docker build -t demo-app .
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    
-    - name: Trivy Container Scan
-      continue-on-error: true
-      run: |
-        docker run --rm \
-        -v /var/run/docker.sock:/var/run/docker.sock \
-        aquasec/trivy image demo-app > trivy-report.txt
+      - name: Run Snyk
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          npm install || true
+          npx snyk test --json > snyk-report.json || true
 
-    
-    - name: Upload Security Reports
-      uses: actions/upload-artifact@v4
-      with:
-        name: security-scan-reports
-        path: |
-          trufflehog-report.json
-          snyk-report.json
-          semgrep-report.json
-          checkov-report.json
-          trivy-report.txt
+      - name: Upload SCA Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-report
+          path: snyk-report.json
+
+
+  # =========================
+  # STAGE 3: SAST
+  # =========================
+  sast-scan:
+    name: Static Code Scan (Semgrep)
+    runs-on: ubuntu-latest
+    needs: sca-scan
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run Semgrep
+        continue-on-error: true
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        run: |
+          pip install semgrep
+          semgrep scan --config=auto --json > semgrep-report.json || true
+
+      - name: Upload SAST Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-report
+          path: semgrep-report.json
+
+
+  # =========================
+  # STAGE 4: IaC
+  # =========================
+  iac-scan:
+    name: Infrastructure Scan (Checkov)
+    runs-on: ubuntu-latest
+    needs: sast-scan
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run Checkov
+        continue-on-error: true
+        run: |
+          pip install checkov
+          checkov -d . -o json > checkov-report.json || true
+
+      - name: Upload IaC Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: iac-report
+          path: checkov-report.json
+
+
+  # =========================
+  # STAGE 5: IMAGE SCAN
+  # =========================
+  image-scan:
+    name: Container Image Scan (Trivy)
+    runs-on: ubuntu-latest
+    needs: iac-scan
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build Docker Image
+        run: docker build -t demo-app .
+
+      - name: Run Trivy
+        continue-on-error: true
+        run: |
+          docker run --rm \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          aquasec/trivy image demo-app > trivy-report.txt
+
+      - name: Upload Image Scan Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-report
+          path: trivy-report.txt
+
+
+  # =========================
+  # STAGE 6: DOWNLOAD REPORTS
+  # =========================
+  final-report:
+    name: Final Report Stage
+    runs-on: ubuntu-latest
+    needs: image-scan
+
+    steps:
+      - name: Summary
+        run: |
+          echo "All security stages completed successfully."
+          echo "Reports are available in the Artifacts section."
